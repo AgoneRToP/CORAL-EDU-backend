@@ -1,7 +1,0 @@
-onlyBuiltDependencies:
-  - '@parcel/watcher'
-  - '@prisma/engines'
-  - '@scarf/scarf'
-  - 'argon2'
-  - 'prisma'
-  - 'unrs-resolver'
