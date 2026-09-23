@@ -6,8 +6,6 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package*.json ./
 
-RUN pnpm approve-builds
-
 RUN pnpm install
 
 COPY . .
