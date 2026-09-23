@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN pnpm install
 
 COPY . . 
 
@@ -14,4 +14,4 @@ RUN npm run build
 
 EXPOSE 4000
 
-CMD ["npm","run","start:prod"]
+CMD ["pnpm","run","start:prod"]
