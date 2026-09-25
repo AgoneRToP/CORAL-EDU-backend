@@ -13,6 +13,12 @@ CREATE TYPE "HomeworkStatus" AS ENUM ('ACCEPTED', 'REJECTED', 'PENDING', 'CHECKE
 -- CreateEnum
 CREATE TYPE "GroupStatus" AS ENUM ('PLANNED', 'ACTIVE', 'COMPLETED', 'INACTIVE');
 
+-- CreateEnum
+CREATE TYPE "NotificationEntity" AS ENUM ('USER', 'COURSE', 'GROUP', 'ROOM');
+
+-- CreateEnum
+CREATE TYPE "NotificationAction" AS ENUM ('CREATED', 'UPDATED', 'DELETED', 'STATUS_CHANGED');
+
 -- CreateTable
 CREATE TABLE "User" (
     "id" SERIAL NOT NULL,
@@ -184,6 +190,21 @@ CREATE TABLE "HomeworkResult" (
     CONSTRAINT "HomeworkResult_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Notification" (
+    "id" SERIAL NOT NULL,
+    "entity" "NotificationEntity" NOT NULL,
+    "action" "NotificationAction" NOT NULL,
+    "entityId" INTEGER NOT NULL,
+    "title" TEXT NOT NULL,
+    "message" TEXT,
+    "actorId" INTEGER,
+    "isRead" BOOLEAN NOT NULL DEFAULT false,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Notification_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -210,6 +231,12 @@ CREATE UNIQUE INDEX "Attendance_studentId_lessonId_key" ON "Attendance"("student
 
 -- CreateIndex
 CREATE UNIQUE INDEX "HomeworkResult_userId_homeworkId_homeworkAnswerId_key" ON "HomeworkResult"("userId", "homeworkId", "homeworkAnswerId");
+
+-- CreateIndex
+CREATE INDEX "Notification_isRead_idx" ON "Notification"("isRead");
+
+-- CreateIndex
+CREATE INDEX "Notification_created_at_idx" ON "Notification"("created_at");
 
 -- AddForeignKey
 ALTER TABLE "Group" ADD CONSTRAINT "Group_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -267,3 +294,6 @@ ALTER TABLE "HomeworkResult" ADD CONSTRAINT "HomeworkResult_homeworkId_fkey" FOR
 
 -- AddForeignKey
 ALTER TABLE "HomeworkResult" ADD CONSTRAINT "HomeworkResult_homeworkAnswerId_fkey" FOREIGN KEY ("homeworkAnswerId") REFERENCES "HomeworkAnswer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

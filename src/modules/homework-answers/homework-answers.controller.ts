@@ -74,9 +74,8 @@ export class HomeworkAnswersController {
   @UseInterceptors(FileInterceptor('file', answerFileOptions))
   create(
     @Body() dto: CreateHomeworkAnswerDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (!file) throw new BadRequestException('Файл ответа не загружен');
     return this.service.create(dto, file);
   }
 

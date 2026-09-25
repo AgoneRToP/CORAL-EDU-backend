@@ -20,6 +20,8 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { QuaryCourseDto } from './dto/quary-course.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import type { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
 
 @ApiTags('Courses')
 @Controller('courses')
@@ -49,20 +51,24 @@ export class CoursesController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  async create(@Body() payload: CreateCourseDto) {
-    return await this.service.create(payload);
+  async create(
+    @Body() dto: CreateCourseDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return await this.service.create(dto, actor.id);
   }
 
   @Patch(':id')
-  @Roles(Role.SUPERADMIN)
+  @Roles(Role.SUPERADMIN, Role.ADMIN)
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() payload: UpdateCourseDto,
+    @Body() dto: UpdateCourseDto,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.update(id, payload);
+    return await this.service.update(id, dto, actor.id);
   }
 
   @Patch(':id/status')
@@ -74,8 +80,9 @@ export class CoursesController {
     @Param('id', ParseIntPipe) id: number,
     @Query('status', new ParseEnumPipe(Status))
     status: Status,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.changeStatus(id, status);
+    return await this.service.changeStatus(id, status, actor.id);
   }
 
   @Delete(':id')
@@ -83,7 +90,10 @@ export class CoursesController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  async delete(@Param('id') id: number) {
-    return await this.service.delete(id);
+  async delete(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return await this.service.delete(id, actor.id);
   }
 }

@@ -6,12 +6,23 @@ import {
 } from '@nestjs/common';
 import { QuaryRoomDto } from './dto/quary-room.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
-import { Prisma, Status } from '@prisma/client';
+import {
+  NotificationAction,
+  NotificationEntity,
+  Prisma,
+  Status,
+} from '@prisma/client';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ROOM_LABELS } from './room.constants';
+import { buildChanges } from '@/common/utils/build-changes';
 
 @Injectable()
 export class RoomsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async getAll(query: QuaryRoomDto) {
     const { status, search, page = 1, limit = 10 } = query;
@@ -59,9 +70,9 @@ export class RoomsService {
     };
   }
 
-  async create(payload: CreateRoomDto) {
+  async create(dto: CreateRoomDto, actorId?: number) {
     const existing = await this.prisma.room.findUnique({
-      where: { name: payload.name },
+      where: { name: dto.name },
     });
 
     if (existing) {
@@ -69,7 +80,15 @@ export class RoomsService {
     }
 
     const created = await this.prisma.room.create({
-      data: { ...payload },
+      data: { ...dto },
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.ROOM,
+      action: NotificationAction.CREATED,
+      entityId: created.id,
+      title: created.name,
+      actorId,
     });
 
     return {
@@ -78,13 +97,13 @@ export class RoomsService {
     };
   }
 
-  async update(id: number, payload: UpdateRoomDto) {
+  async update(id: number, dto: UpdateRoomDto, actorId?: number) {
     const existingRoom = await this.getOne(id);
 
-    if (payload.name && payload.name !== existingRoom.data.name) {
+    if (dto.name && dto.name !== existingRoom.data.name) {
       const existingName = await this.prisma.room.findFirst({
         where: {
-          name: payload.name,
+          name: dto.name,
           NOT: {
             id,
           },
@@ -96,10 +115,23 @@ export class RoomsService {
       }
     }
 
+    const changes = buildChanges(existingRoom.data,dto, ROOM_LABELS);
+
     const updated = await this.prisma.room.update({
       where: { id },
-      data: { ...payload },
+      data: { ...dto },
     });
+
+    if (changes.length) {
+      await this.notifications.log({
+        entity: NotificationEntity.ROOM,
+        action: NotificationAction.UPDATED,
+        entityId: updated.id,
+        title: updated.name,
+        message: changes.join('; ').trim(),
+        actorId,
+      });
+    }
 
     return {
       success: true,
@@ -107,25 +139,42 @@ export class RoomsService {
     };
   }
 
-  async changeStatus(id: number, status: Status) {
-    await this.getOne(id);
+  async changeStatus(id: number, status: Status, actorId?: number) {
+    const before = await this.getOne(id);
 
     const updated = await this.prisma.room.update({
       where: { id },
       data: { status },
     });
 
+    await this.notifications.log({
+      entity: NotificationEntity.ROOM,
+      action: NotificationAction.UPDATED,
+      entityId: updated.id,
+      title: updated.name,
+      message: `Статус: ${before.data.status} → ${status}`,
+      actorId,
+    });
+
     return {
       success: true,
       data: updated,
     };
   }
 
-  async delete(id: number) {
+  async delete(id: number, actorId?: number) {
     await this.getOne(id);
 
     const deleted = await this.prisma.room.delete({
       where: { id },
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.USER,
+      action: NotificationAction.DELETED,
+      entityId: id,
+      title: deleted.name,
+      actorId,
     });
 
     return {

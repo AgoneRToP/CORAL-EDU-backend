@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { config } from './common/config/swagger';
 import { join } from 'path';
@@ -31,6 +31,14 @@ async function bootstrap() {
       transformOptions: {
         enableImplicitConversion: true,
       },
+      exceptionFactory: (errors) =>
+        new BadRequestException({
+          message: 'Ошибка валидации',
+          errors: errors.map((e) => ({
+            field: e.property,
+            message: Object.values(e.constraints ?? {})[0],
+          })),
+        }),
     }),
   );
 

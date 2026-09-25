@@ -19,7 +19,7 @@ export class CreateRoomDto {
     example: 21,
   })
   @IsOptional()
-  @IsInt()
-  @IsPositive()
+  @IsInt({ message: 'Это поле должно быть целым числом' })
+  @IsPositive({ message: 'Это поле должно быть положительным числом' })
   capacity?: number;
 }

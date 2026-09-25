@@ -55,17 +55,17 @@ export class AuthService {
     return tokens;
   }
 
-  async login(payload: LoginDto) {
+  async login(dto: LoginDto) {
     const existing = await this.prisma.user.findFirst({
       where: {
         OR: [
-          payload.phone ? { phone: payload.phone.toLowerCase() } : undefined,
-          payload.email ? { email: payload.email.toLowerCase() } : undefined,
+          dto.phone ? { phone: dto.phone.toLowerCase() } : undefined,
+          dto.email ? { email: dto.email.toLowerCase() } : undefined,
         ].filter(Boolean) as Prisma.UserWhereInput[],
       },
     });
 
-    if (!payload.email && !payload.phone) {
+    if (!dto.email && !dto.phone) {
       throw new BadRequestException('Пожалуйста, введите логин');
     }
 
@@ -79,7 +79,7 @@ export class AuthService {
 
     const isSame = await this.verifyPassword(
       existing.password,
-      payload.password,
+      dto.password,
     );
 
     if (!isSame) {

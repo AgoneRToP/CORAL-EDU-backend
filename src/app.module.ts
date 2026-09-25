@@ -19,6 +19,8 @@ import { HomeworkAnswersModule } from './modules/homework-answers/homework-answe
 import { HomeworkResultsModule } from './modules/homework-results/homework-results.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAccessGuard } from './common/guards/jwt-access.guard';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { JwtAccessGuard } from './common/guards/jwt-access.guard';
     HomeworksModule,
     HomeworkAnswersModule,
     HomeworkResultsModule,
+    NotificationsModule,
+    DashboardModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: JwtAccessGuard }],
 })

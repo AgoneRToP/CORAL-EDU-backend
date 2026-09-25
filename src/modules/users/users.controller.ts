@@ -35,7 +35,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { Public } from '@/common/decorators/public.decorator';
 import { VerifyEmailDto } from './dto/verify-email-user.dto';
 import type { Request } from 'express';
-import { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
+import type { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
 @ApiTags('Users')
 @Controller('users')
@@ -89,10 +90,11 @@ export class UsersController {
     }),
   )
   async create(
-    @Body() payload: CreateUserDto,
+    @Body() dto: CreateUserDto,
     @UploadedFile() photo: Express.Multer.File,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.create(payload, photo);
+    return await this.service.create(dto, photo, actor.id);
   }
 
   @Public()
@@ -128,10 +130,11 @@ export class UsersController {
   )
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() payload: UpdateUserDto,
+    @Body() dto: UpdateUserDto,
     @UploadedFile() photo: Express.Multer.File,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.update(id, payload, photo);
+    return await this.service.update(id, dto, photo, actor.id);
   }
 
   @Patch(':id/status')
@@ -142,8 +145,9 @@ export class UsersController {
   async changeStatus(
     @Param('id', ParseIntPipe) id: number,
     @Query() query: ChangeStatusUserDto,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.changeStatus(id, query);
+    return await this.service.changeStatus(id, query, actor.id);
   }
 
   @Delete(':id')
@@ -156,7 +160,8 @@ export class UsersController {
     @Query('role', new ParseEnumPipe(Role, { optional: true }))
     role: Role,
     @Req() req: any,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.delete(id, role, req.user.role);
+    return await this.service.delete(id, role, req.user.role, actor.id);
   }
 }

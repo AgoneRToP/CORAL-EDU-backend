@@ -73,7 +73,7 @@ export class HomeworkAnswersService {
     };
   }
 
-  async create(dto: CreateHomeworkAnswerDto, file: Express.Multer.File) {
+  async create(dto: CreateHomeworkAnswerDto, file?: Express.Multer.File) {
     const homework = await this.prisma.homework.findUnique({
       where: { id: dto.homeworkId },
       include: { lesson: { select: { groupId: true } } },
@@ -90,8 +90,8 @@ export class HomeworkAnswersService {
 
     const created = await this.prisma.homeworkAnswer.create({
       data: {
-        title: dto.title ?? file.originalname,
-        file: `/uploads/homework-answers/${file.filename}`,
+        title: dto.title ?? file?.originalname ?? '',
+        file: `/uploads/homework-answers/${file?.filename}`,
         studentId: dto.studentId,
         homeworkId: homework.id,
       },
@@ -113,7 +113,7 @@ export class HomeworkAnswersService {
     if (file) {
       data.file = `/uploads/homework-answers/${file.filename}`;
       data.title = dto.title ?? file.originalname;
-      await this.removeAnswerFile(existing.data.file);
+      await this.removeAnswerFile(existing.data.file ?? '');
     }
 
     const updated = await this.prisma.homeworkAnswer.update({
@@ -130,16 +130,18 @@ export class HomeworkAnswersService {
 
     const deleted = await this.prisma.homeworkAnswer.delete({ where: { id } });
 
-    await this.removeAnswerFile(existing.data.file);
+    await this.removeAnswerFile(existing.data.file ?? '');
 
     return { success: true, data: deleted };
   }
 
   private async removeAnswerFile(fileUrl: string) {
-    try {
-      await unlink(join(process.cwd(), fileUrl));
-    } catch (err) {
-      console.warn(`Не удалось удалить файл ответа: ${fileUrl}`, err);
+    if (fileUrl) {
+      try {
+        await unlink(join(process.cwd(), fileUrl));
+      } catch (err) {
+        console.warn(`Не удалось удалить файл ответа: ${fileUrl}`, err);
+      }
     }
   }
 

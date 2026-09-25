@@ -68,7 +68,7 @@ export class CreateUserDto {
   })
   @IsOptional()
   @Type(() => Date)
-  @IsDate()
+  @IsDate({ message: 'Некорректная дата рождения' })
   date?: Date;
 
   @ApiPropertyOptional({

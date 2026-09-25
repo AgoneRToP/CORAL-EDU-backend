@@ -20,6 +20,8 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { QuaryRoomDto } from './dto/quary-room.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import type { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
 
 @ApiTags('Rooms')
 @Controller('rooms')
@@ -49,20 +51,24 @@ export class RoomsController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  async create(@Body() payload: CreateRoomDto) {
-    return await this.service.create(payload);
+  async create(
+    @Body() dto: CreateRoomDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return await this.service.create(dto, actor.id);
   }
 
   @Patch(':id')
-  @Roles(Role.SUPERADMIN)
+  @Roles(Role.SUPERADMIN, Role.ADMIN)
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() payload: UpdateRoomDto,
+    @Body() dto: UpdateRoomDto,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.update(id, payload);
+    return await this.service.update(id, dto, actor.id);
   }
 
   @Patch(':id/status')
@@ -74,8 +80,9 @@ export class RoomsController {
     @Param('id', ParseIntPipe) id: number,
     @Query('status', new ParseEnumPipe(Status))
     status: Status,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.changeStatus(id, status);
+    return await this.service.changeStatus(id, status, actor.id);
   }
 
   @Delete(':id')
@@ -83,7 +90,10 @@ export class RoomsController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  async delete(@Param('id') id: number) {
-    return await this.service.delete(id);
+  async delete(
+    @Param('id') id: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return await this.service.delete(id, actor.id);
   }
 }

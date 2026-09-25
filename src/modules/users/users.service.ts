@@ -5,27 +5,36 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, User } from '@prisma/client';
+import {
+  NotificationAction,
+  NotificationEntity,
+  Prisma,
+  Role,
+} from '@prisma/client';
 import { QuaryUserDto } from './dto/quary-user.dto';
 import { ChangeStatusUserDto } from './dto/change-status-user.dto';
 import * as argon from 'argon2';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { VerifyEmailDto } from './dto/verify-email-user.dto';
-import { MailService } from '@/core/mail/mail.service'; // путь подстрой под свой проект
+import { MailService } from '@/core/mail/mail.service';
 import { join } from 'node:path';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { randomInt } from 'node:crypto';
 import { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
+import { NotificationsService } from '../notifications/notifications.service';
+import { USER_LABELS } from './user.constants';
+import { buildChanges } from '@/common/utils/build-changes';
 
-const VERIFICATION_CODE_TTL_MS = 10 * 60 * 1000; // 10 минут
+const VERIFICATION_CODE_TTL_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async getAll(query: QuaryUserDto, currentUser?: CurrentUserPayload) {
@@ -40,6 +49,7 @@ export class UsersService {
       }),
       ...(role && { role }),
       ...(status && { status }),
+      ...(!role && { role: { not: Role.SUPERADMIN } }),
     };
 
     if (currentUser?.role === Role.TEACHER) {
@@ -111,31 +121,32 @@ export class UsersService {
     };
   }
 
-  async create(payload: CreateUserDto, photo?: Express.Multer.File) {
+  async create(
+    dto: CreateUserDto,
+    photo?: Express.Multer.File,
+    actorId?: number,
+  ) {
     const existing = await this.prisma.user.findFirst({
       where: {
-        OR: [{ phone: payload.phone }, { email: payload.email }],
+        OR: [{ phone: dto.phone }, { email: dto.email }],
       },
     });
 
     if (existing) {
-      if (existing.phone === payload.phone) {
+      if (existing.phone === dto.phone) {
         throw new ConflictException('Этот номер телефона уже зарегистрирован');
       }
 
-      if (existing.email === payload.email) {
+      if (existing.email === dto.email) {
         throw new ConflictException(
           'Эта электронная почта уже зарегистрирована',
         );
       }
     }
 
-    const hashedPassword = await argon.hash(payload.password);
+    const hashedPassword = await argon.hash(dto.password);
 
-    // Если указан email — считаем это регистрацией через email:
-    // аккаунт создаётся неактивным, пока не подтверждён код.
-    // Если email не указан (только phone) — активируем сразу.
-    const isEmailSignup = Boolean(payload.email);
+    const isEmailSignup = Boolean(dto.email);
 
     const verificationCode = isEmailSignup
       ? this.generateVerificationCode()
@@ -146,7 +157,7 @@ export class UsersService {
 
     const created = await this.prisma.user.create({
       data: {
-        ...payload,
+        ...dto,
         password: hashedPassword,
         photo: photo?.filename,
         status: isEmailSignup ? 'INACTIVE' : 'ACTIVE',
@@ -164,15 +175,22 @@ export class UsersService {
     if (isEmailSignup && verificationCode) {
       try {
         await this.mailService.sendVerificationCode(
-          payload.email!,
+          dto.email!,
           verificationCode,
         );
       } catch (err) {
-        // Пользователь уже создан в базе — не рушим весь запрос,
-        // если письмо не отправилось. Логируем, чтобы видеть проблему в консоли/мониторинге.
         console.error('Не удалось отправить письмо с кодом:', err);
       }
     }
+
+    await this.notifications.log({
+      entity: NotificationEntity.USER,
+      action: NotificationAction.CREATED,
+      entityId: created.id,
+      title:
+        `${created.surname ?? ''} ${created.name} (${created.role})`.trim(),
+      actorId,
+    });
 
     return {
       success: true,
@@ -255,14 +273,14 @@ export class UsersService {
   }
 
   private generateVerificationCode(): string {
-    // 6-значный код: от 100000 до 999999
     return randomInt(100000, 1000000).toString();
   }
 
   async update(
     id: number,
-    payload: UpdateUserDto,
+    dto: UpdateUserDto,
     photo?: Express.Multer.File,
+    actorId?: number,
   ) {
     const existingUser = await this.prisma.user.findUnique({
       where: { id },
@@ -272,9 +290,9 @@ export class UsersService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    if (payload.phone && payload.phone !== existingUser.phone) {
+    if (dto.phone && dto.phone !== existingUser.phone) {
       const existingPhone = await this.prisma.user.findFirst({
-        where: { phone: payload.phone, NOT: { id } },
+        where: { phone: dto.phone, NOT: { id } },
       });
 
       if (existingPhone) {
@@ -284,9 +302,9 @@ export class UsersService {
       }
     }
 
-    if (payload.email && payload.email !== existingUser.email) {
+    if (dto.email && dto.email !== existingUser.email) {
       const existingEmail = await this.prisma.user.findFirst({
-        where: { email: payload.email, NOT: { id } },
+        where: { email: dto.email, NOT: { id } },
       });
 
       if (existingEmail) {
@@ -296,7 +314,7 @@ export class UsersService {
       }
     }
 
-    const { password, removePhoto, ...rest } = payload;
+    const { password, removePhoto, ...rest } = dto;
 
     const data: Prisma.UserUpdateInput = {
       ...rest,
@@ -306,7 +324,6 @@ export class UsersService {
       data.password = await argon.hash(password);
     }
 
-    // Новый файл имеет приоритет над флагом удаления
     if (photo) {
       if (existingUser.photo) {
         await this.deletePhotoFile(existingUser.photo);
@@ -317,6 +334,14 @@ export class UsersService {
       data.photo = null;
     }
 
+    const changes = buildChanges(existingUser, rest, USER_LABELS);
+
+    const hadPhoto = !!existingUser.photo;
+
+    if (password) changes.push('Пароль изменён');
+    if (photo) changes.push(hadPhoto ? 'Фото обновлено' : 'Фото добавлено');
+    else if (removePhoto && existingUser.photo) changes.push('Фото удалено');
+
     const updated = await this.prisma.user.update({
       where: { id },
       data,
@@ -325,6 +350,17 @@ export class UsersService {
         verificationCode: true,
       },
     });
+
+    if (changes.length) {
+      await this.notifications.log({
+        entity: NotificationEntity.USER,
+        action: NotificationAction.UPDATED,
+        entityId: updated.id,
+        title: `${updated.surname ?? ''} ${updated.name}`.trim(),
+        message: changes.join('; '),
+        actorId,
+      });
+    }
 
     return {
       success: true,
@@ -339,14 +375,23 @@ export class UsersService {
     }
   }
 
-  async changeStatus(id: number, query: ChangeStatusUserDto) {
+  async changeStatus(id: number, query: ChangeStatusUserDto, actorId?: number) {
     const { status, role } = query;
 
-    await this.getOne(id, role);
+    const before = await this.getOne(id, role);
 
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status },
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.USER,
+      action: NotificationAction.STATUS_CHANGED,
+      entityId: id,
+      title: `${updated.surname ?? ''} ${updated.name}`.trim(),
+      message: `Статус: ${before.data.status} → ${status}`,
+      actorId,
     });
 
     return {
@@ -355,7 +400,7 @@ export class UsersService {
     };
   }
 
-  async delete(id: number, role: Role, req: Role) {
+  async delete(id: number, role: Role, req: Role, actorId?: number) {
     const existing = await this.getOne(id, role);
 
     if (req === Role.ADMIN && existing.data.role === Role.ADMIN) {
@@ -370,6 +415,17 @@ export class UsersService {
 
     const deleted = await this.prisma.user.delete({ where: { id } });
 
-    return { success: true, data: deleted };
+    await this.notifications.log({
+      entity: NotificationEntity.USER,
+      action: NotificationAction.DELETED,
+      entityId: id,
+      title: `${deleted.surname ?? ''} ${deleted.name}`.trim(),
+      actorId,
+    });
+
+    return {
+      success: true,
+      data: deleted,
+    };
   }
 }

@@ -25,6 +25,7 @@ export class UserSeeder implements OnModuleInit {
           password: await argon.hash(process.env.ADMIN_PASSWORD as string),
           role: Role.SUPERADMIN,
           status: Status.ACTIVE,
+          photo: "SUPERADMIN.png"
         },
       });
 

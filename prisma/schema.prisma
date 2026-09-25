@@ -42,6 +42,20 @@ enum GroupStatus {
   INACTIVE
 }
 
+enum NotificationEntity {
+  USER
+  COURSE
+  GROUP
+  ROOM
+}
+
+enum NotificationAction {
+  CREATED
+  UPDATED
+  DELETED
+  STATUS_CHANGED
+}
+
 model User {
   id       Int       @id @default(autoincrement())
   name     String
@@ -75,6 +89,8 @@ model User {
   homeworkAnswers HomeworkAnswer[]
 
   homeworkResults HomeworkResult[] @relation("UserHomeworkResult")
+
+  notificationsActed Notification[] @relation("NotificationActor")
 }
 
 model Course {
@@ -238,7 +254,7 @@ model Homework {
 model HomeworkAnswer {
   id             Int            @id @default(autoincrement())
   title          String
-  file           String
+  file           String?
   homeworkStatus HomeworkStatus @default(PENDING)
 
   studentId  Int
@@ -271,4 +287,23 @@ model HomeworkResult {
   homeworkAnswer HomeworkAnswer @relation(fields: [homeworkAnswerId], references: [id], onDelete: Cascade)
 
   @@unique([userId, homeworkId, homeworkAnswerId])
+}
+
+model Notification {
+  id       Int                @id @default(autoincrement())
+  entity   NotificationEntity
+  action   NotificationAction
+  entityId Int
+  title    String
+  message  String?
+
+  actorId Int?
+  actor   User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  isRead Boolean @default(false)
+
+  created_at DateTime @default(now())
+
+  @@index([isRead])
+  @@index([created_at])
 }

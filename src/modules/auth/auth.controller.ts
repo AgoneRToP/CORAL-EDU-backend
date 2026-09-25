@@ -38,10 +38,10 @@ export class AuthController {
   @Public()
   @Post('/login')
   async login(
-    @Body() payload: LoginDto,
+    @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.login(payload);
+    const result = await this.authService.login(dto);
     this.setAuthCookies(res, result.tokens);
     return result;
   }

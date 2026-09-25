@@ -3,21 +3,43 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Course, GroupStatus, Prisma, Role, Week } from '@prisma/client';
+import {
+  Course,
+  GroupStatus,
+  NotificationAction,
+  NotificationEntity,
+  Prisma,
+  Role,
+  Room,
+  Week,
+} from '@prisma/client';
 import { PrismaService } from '@/core/database/prisma.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { QueryGroupDto } from './dto/query-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
+import { NotificationsService } from '../notifications/notifications.service';
+import { buildChanges } from '@/common/utils/build-changes';
+import { GROUP_LABELS } from './group.constants';
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
-    async getAll(query: QueryGroupDto, currentUser?: CurrentUserPayload) {
-    const { page = 1, limit = 10, search, status, week, courseId, roomId } =
-      query;
- 
+  async getAll(query: QueryGroupDto, currentUser?: CurrentUserPayload) {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      status,
+      week,
+      courseId,
+      roomId,
+    } = query;
+
     const where: Prisma.GroupWhereInput = {
       ...(search && {
         name: {
@@ -34,13 +56,13 @@ export class GroupsService {
       ...(courseId && { courseId }),
       ...(roomId && { roomId }),
     };
- 
+
     if (currentUser?.role === Role.TEACHER) {
       where.groupTeachers = {
         some: { teacherId: currentUser.id },
       };
     }
- 
+
     const [groups, total] = await this.prisma.$transaction([
       this.prisma.group.findMany({
         where,
@@ -55,7 +77,7 @@ export class GroupsService {
         where,
       }),
     ]);
- 
+
     return {
       success: true,
       data: groups,
@@ -67,7 +89,6 @@ export class GroupsService {
       },
     };
   }
-
 
   async getOne(id: number) {
     const group = await this.prisma.group.findUnique({
@@ -88,7 +109,7 @@ export class GroupsService {
     };
   }
 
-  async create(dto: CreateGroupDto) {
+  async create(dto: CreateGroupDto, actorId: number) {
     const course = await this.ensureCourseExists(dto.courseId);
 
     await this.ensureRoomExists(dto.roomId);
@@ -110,39 +131,28 @@ export class GroupsService {
     }
 
     await this.ensureRoomAvailability({
-      roomId: dto.roomId,
-
-      week: dto.week,
-
+      ...dto,
       startDate,
-
-      startTime: dto.startTime,
-
       durationHours: course.durationHours,
-
       durationMonths: course.durationMonths,
     });
 
     const created = await this.prisma.group.create({
       data: {
-        name: dto.name,
-
+        ...dto,
         startDate,
-
-        startTime: dto.startTime,
-
-        maxStudent: dto.maxStudent,
-
-        week: dto.week,
-
-        description: dto.description,
-
-        courseId: dto.courseId,
-
-        roomId: dto.roomId,
       },
 
       include: this.defaultInclude(),
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.GROUP,
+      action: NotificationAction.CREATED,
+      entityId: created.id,
+      title: created.name,
+      message: `Курс: ${created.course.name}; Кабинет: ${created.room.name}`,
+      actorId,
     });
 
     return {
@@ -151,7 +161,7 @@ export class GroupsService {
     };
   }
 
-  async update(id: number, dto: UpdateGroupDto) {
+  async update(id: number, dto: UpdateGroupDto, actorId: number) {
     const existing = await this.getOne(id);
 
     const current = existing.data;
@@ -162,8 +172,10 @@ export class GroupsService {
       course = await this.ensureCourseExists(dto.courseId);
     }
 
+    let room: Room = current.room;
+
     if (dto.roomId !== undefined) {
-      await this.ensureRoomExists(dto.roomId);
+      room = await this.ensureRoomExists(dto.roomId);
     }
 
     if (dto.name !== undefined) {
@@ -194,33 +206,48 @@ export class GroupsService {
 
     await this.ensureRoomAvailability({
       roomId,
-
       week,
-
       startDate,
-
       startTime,
-
       durationHours: course.durationHours,
-
       durationMonths: course.durationMonths,
-
       excludeGroupId: id,
     });
+
+    const changes = buildChanges(
+      current,
+      { ...dto, startDate: dto.startDate ? startDate : undefined },
+      GROUP_LABELS,
+    );
+
+    if (dto.courseId !== undefined && dto.courseId !== current.courseId) {
+      changes.push(`Курс: ${current.course.name} → ${course.name}`);
+    }
+    if (dto.roomId !== undefined && dto.roomId !== current.roomId) {
+      changes.push(`Кабинет: ${current.room.name} → ${room.name}`);
+    }
 
     const updated = await this.prisma.group.update({
       where: {
         id,
       },
-
       data: {
         ...dto,
-
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
       },
-
       include: this.defaultInclude(),
     });
+
+    if (changes.length) {
+      await this.notifications.log({
+        entity: NotificationEntity.GROUP,
+        action: NotificationAction.UPDATED,
+        entityId: updated.id,
+        title: updated.name,
+        message: changes.join('; '),
+        actorId,
+      });
+    }
 
     return {
       success: true,
@@ -228,32 +255,51 @@ export class GroupsService {
     };
   }
 
-  async changeStatus(id: number, status: GroupStatus) {
-    await this.getOne(id);
+  async changeStatus(id: number, status: GroupStatus, actorId: number) {
+    const before = await this.getOne(id);
 
     const updated = await this.prisma.group.update({
       where: {
         id,
       },
-
       data: {
         status,
       },
     });
 
+    if (before.data.status !== status) {
+      await this.notifications.log({
+        entity: NotificationEntity.GROUP,
+        action: NotificationAction.STATUS_CHANGED,
+        entityId: id,
+        title: updated.name,
+        message: `Статус: ${before.data.status} → ${status}`,
+        actorId,
+      });
+    }
+
     return {
       success: true,
       data: updated,
     };
   }
 
-  async delete(id: number) {
-    await this.getOne(id);
+  async delete(id: number, actorId: number) {
+    const existing = await this.getOne(id);
 
     const deleted = await this.prisma.group.delete({
       where: {
         id,
       },
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.GROUP,
+      action: NotificationAction.DELETED,
+      entityId: id,
+      title: deleted.name,
+      message: `Курс: ${existing.data.course.name}`,
+      actorId,
     });
 
     return {

@@ -18,11 +18,12 @@ import { CreateGroupDto } from './dto/create-group.dto';
 import { QueryGroupDto } from './dto/query-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { Roles } from '@/common/decorators/roles.decorator';
-import { Role, Status } from '@prisma/client';
+import { Role, GroupStatus } from '@prisma/client';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
-import { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
+import type { CurrentUserPayload } from '@/common/interfaces/current-user.interface';
 import type { Request } from 'express';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
 @ApiTags('Groups')
 @Controller('groups')
@@ -57,8 +58,11 @@ export class GroupsController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  create(@Body() dto: CreateGroupDto) {
-    return this.service.create(dto);
+  create(
+    @Body() dto: CreateGroupDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return this.service.create(dto, actor.id);
   }
 
   @Patch(':id')
@@ -66,8 +70,12 @@ export class GroupsController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateGroupDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateGroupDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return this.service.update(id, dto, actor.id);
   }
 
   @Patch(':id/status')
@@ -77,10 +85,11 @@ export class GroupsController {
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
   async changeStatus(
     @Param('id', ParseIntPipe) id: number,
-    @Query('status', new ParseEnumPipe(Status))
-    status: Status,
+    @Query('status', new ParseEnumPipe(GroupStatus))
+    status: GroupStatus,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return await this.service.changeStatus(id, status);
+    return await this.service.changeStatus(id, status, actor.id);
   }
 
   @Delete(':id')
@@ -88,7 +97,10 @@ export class GroupsController {
   @ApiBearerAuth('accessToken')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: 'SUPERADMIN, ADMIN' })
-  delete(@Param('id', ParseIntPipe) id: number) {
-    return this.service.delete(id);
+  delete(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return this.service.delete(id, actor.id);
   }
 }

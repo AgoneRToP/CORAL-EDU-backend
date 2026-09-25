@@ -34,13 +34,14 @@ export class QuaryUserDto {
   @IsString()
   search?: string;
 
-  @ApiProperty({ required: false, enum: Status, example: Status.ACTIVE })
+  @ApiProperty({ enum: Status, example: Status.ACTIVE })
   @IsEnum(Status)
   @IsOptional()
   status?: Status;
 
-  @ApiProperty({ enum: userRoles, required: false })
+  @ApiProperty({ enum: userRoles })
+  @IsOptional()
   @IsEnum(userRoles)
   @IsNotIn([Role.SUPERADMIN])
-  role: Role;
+  role?: Role;
 }

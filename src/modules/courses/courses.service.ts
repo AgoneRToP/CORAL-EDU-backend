@@ -6,12 +6,23 @@ import {
 } from '@nestjs/common';
 import { QuaryCourseDto } from './dto/quary-course.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
-import { Prisma, Status } from '@prisma/client';
+import {
+  NotificationAction,
+  NotificationEntity,
+  Prisma,
+  Status,
+} from '@prisma/client';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { buildChanges } from '@/common/utils/build-changes';
+import { COURSE_LABELS } from './course.constants';
 
 @Injectable()
 export class CoursesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async getAll(query: QuaryCourseDto) {
     const { status, search, page = 1, limit = 10 } = query;
@@ -59,9 +70,9 @@ export class CoursesService {
     };
   }
 
-  async create(payload: CreateCourseDto) {
+  async create(dto: CreateCourseDto, actorId: number) {
     const existing = await this.prisma.course.findUnique({
-      where: { name: payload.name },
+      where: { name: dto.name },
     });
 
     if (existing) {
@@ -69,7 +80,15 @@ export class CoursesService {
     }
 
     const created = await this.prisma.course.create({
-      data: { ...payload },
+      data: { ...dto },
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.COURSE,
+      action: NotificationAction.CREATED,
+      entityId: created.id,
+      title: `${created.name}`.trim(),
+      actorId,
     });
 
     return {
@@ -78,13 +97,13 @@ export class CoursesService {
     };
   }
 
-  async update(id: number, payload: UpdateCourseDto) {
+  async update(id: number, dto: UpdateCourseDto, actorId: number) {
     const existingCourse = await this.getOne(id);
 
-    if (payload.name && payload.name !== existingCourse.data.name) {
+    if (dto.name && dto.name !== existingCourse.data.name) {
       const existingName = await this.prisma.course.findFirst({
         where: {
-          name: payload.name,
+          name: dto.name,
           NOT: {
             id,
           },
@@ -96,10 +115,23 @@ export class CoursesService {
       }
     }
 
+    const changes = buildChanges(existingCourse.data, dto, COURSE_LABELS);
+
     const updated = await this.prisma.course.update({
       where: { id },
-      data: { ...payload },
+      data: { ...dto },
     });
+
+    if (changes.length) {
+      await this.notifications.log({
+        entity: NotificationEntity.COURSE,
+        action: NotificationAction.UPDATED,
+        entityId: updated.id,
+        title: `${updated.name}`.trim(),
+        message: changes.join('; ').trim(),
+        actorId,
+      });
+    }
 
     return {
       success: true,
@@ -107,25 +139,42 @@ export class CoursesService {
     };
   }
 
-  async changeStatus(id: number, status: Status) {
-    await this.getOne(id);
+  async changeStatus(id: number, status: Status, actorId: number) {
+    const before = await this.getOne(id);
 
     const updated = await this.prisma.course.update({
       where: { id },
       data: { status },
     });
 
+    await this.notifications.log({
+      entity: NotificationEntity.ROOM,
+      action: NotificationAction.UPDATED,
+      entityId: updated.id,
+      title: `${updated.name}`.trim(),
+      message: `Статус: ${before.data.status} → ${status}`,
+      actorId,
+    });
+
     return {
       success: true,
       data: updated,
     };
   }
 
-  async delete(id: number) {
+  async delete(id: number, actorId: number) {
     await this.getOne(id);
 
     const deleted = await this.prisma.course.delete({
       where: { id },
+    });
+
+    await this.notifications.log({
+      entity: NotificationEntity.COURSE,
+      action: NotificationAction.DELETED,
+      entityId: id,
+      title: `${deleted.name}`.trim(),
+      actorId,
     });
 
     return {
